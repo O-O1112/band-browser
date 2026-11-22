@@ -1,0 +1,395 @@
+<template>
+  <div class="page" show="{{!hide}}">
+    <div class="keyboard-panel">
+      <div static class="keyboard-background"></div>
+
+      <!-- 中文與英文共用 JSLab 寬敞 60px 圓形橫滑佈局 -->
+      <scroll if="{{currentState==='cnLetters' || currentState==='enLetters'}}" id="letterKeyboard" class="keyboard-body" scroll-x="true">
+        <div class="letter-rows">
+          <div static class="letter-row row-1">
+            <text class="letter-key" for="{{item in keys['letters'][0]}}" @click="onSelect(item)">{{item}}</text>
+          </div>
+          <div static class="letter-row row-2">
+            <text class="letter-key" for="{{item in keys['letters'][1]}}" @click="onSelect(item)">{{item}}</text>
+          </div>
+          <div class="letter-row row-3">
+            <div if="{{currentState==='cnLetters'}}" class="letter-row-spacer"></div>
+            <div if="{{currentState==='enLetters' && shiftState==='off'}}" class="shift-key" @click="onBtnClick('shift')">
+              <text class="shift-glyph">Aa</text>
+            </div>
+            <div if="{{currentState==='enLetters' && shiftState==='once'}}" class="shift-key shift-key-on" @click="onBtnClick('shift')">
+              <text class="shift-glyph">Aa</text>
+            </div>
+            <div if="{{currentState==='enLetters' && shiftState==='locked'}}" class="shift-key shift-key-locked" @click="onBtnClick('shift')">
+              <text class="shift-glyph">Aa</text>
+              <div static class="shift-lock-dot"></div>
+            </div>
+            <text class="letter-key" for="{{item in keys['letters'][2]}}" @click="onSelect(item)">{{item}}</text>
+            <div class="fn-key" @click="onBtnClick('space')">
+              <text class="fn-glyph">空</text>
+            </div>
+            <div class="fn-key fn-key-enter" @click="onBtnClick('enter')">
+              <text class="fn-glyph">換</text>
+            </div>
+          </div>
+        </div>
+      </scroll>
+
+      <!-- 數字頁：左 3×3 數字，右 0 與常用符號 -->
+      <div if="{{currentState==='numbers'}}" class="numeric-pad">
+        <div class="numeric-row" for="{{row in keys['numbers']}}">
+          <div class="number-digit-group">
+            <text class="number-key" for="{{item in row['digits']}}" @click="onSelect(item)">{{item}}</text>
+          </div>
+          <div class="number-extra-group">
+            <text class="number-key" for="{{item in row['extras']}}" @click="onSelect(item)">{{item}}</text>
+          </div>
+        </div>
+      </div>
+
+      <!-- 符號頁：橫向滑動切換英文符號與中文標點 -->
+      <scroll if="{{currentState==='symbols'}}" class="keyboard-page-scroll" scroll-x="true" bounces="true">
+        <div static class="symbol-content">
+          <div class="symbol-section">
+            <text class="keyboard-section-heading">英文符號</text>
+            <div class="symbol-row" for="{{row in keys['enSymbols']}}">
+              <text class="symbol-key" for="{{item in row}}" @click="onSelect(item)">{{item}}</text>
+            </div>
+          </div>
+          <div class="symbol-section symbol-section-cn">
+            <text class="keyboard-section-heading">中文標點</text>
+            <div class="symbol-row" for="{{row in keys['cnSymbols']}}">
+              <text class="symbol-key" for="{{item in row}}" @click="onSelect(item)">{{item}}</text>
+            </div>
+          </div>
+        </div>
+      </scroll>
+
+      <!-- 常用詞頁：橫向滑動快選短語 -->
+      <scroll if="{{currentState==='snippets'}}" class="keyboard-page-scroll" scroll-x="true" bounces="true">
+        <div static class="snippet-content">
+          <div class="snippet-row" for="{{row in keys['snippets']}}">
+            <text class="snippet-key" for="{{item in row}}" style="width: {{item.width}}px;" @click="onSelect(item.value)">{{item.label}}</text>
+          </div>
+        </div>
+      </scroll>
+
+      <!-- 中文功能列：模式 + 候選字條 + 退格 -->
+      <div if="{{currentState==='cnLetters'}}" class="action-row-cn">
+        <text class="mode-button-cn" @click="onBtnClick('toggleStateMenu')">中</text>
+        <div class="candidate-bar">
+          <scroll id="candidateScroll" class="candidate-scroll" scroll-x="true">
+            <div static class="candidate-content">
+              <text class="candidate" @click="pushCval">{{cval}}</text>
+              <text for="{{cvalList}}" show="{{resultList.length > $idx}}" class="candidate" @click="onRsSelect(resultList[$idx])">{{resultList[$idx]}}</text>
+            </div>
+          </scroll>
+          <div if="{{resultList.length > 0}}" class="candidate-expand" @click="onBtnClick('toggleCandidates')">
+            <text class="candidate-expand-glyph">+</text>
+          </div>
+        </div>
+        <div class="delete-pill" @click="onBtnClick('delete')">
+          <text class="delete-glyph">刪</text>
+        </div>
+      </div>
+
+      <!-- 非中文功能列：ABC / 中 / 符 / 詞 / 123 / 退格 -->
+      <div if="{{currentState!=='cnLetters'}}" class="action-row-five">
+        <text if="{{currentState==='enLetters'}}" class="state-button state-button-compact state-button-active" @click="onBtnClick('toggleStateMenu')">ABC</text>
+        <text else class="state-button state-button-compact" @click="goToState('enLetters')">ABC</text>
+
+        <text class="state-button" @click="goToState('cnLetters')">中</text>
+
+        <text if="{{currentState==='symbols'}}" class="state-button state-button-active" @click="onBtnClick('toggleStateMenu')">符</text>
+        <text else class="state-button" @click="goToState('symbols')">符</text>
+
+        <text if="{{currentState==='snippets'}}" class="state-button state-button-active" @click="onBtnClick('toggleStateMenu')">詞</text>
+        <text else class="state-button" @click="goToState('snippets')">詞</text>
+
+        <text if="{{currentState==='numbers'}}" class="state-button state-button-compact state-button-active" @click="onBtnClick('toggleStateMenu')">123</text>
+        <text else class="state-button state-button-compact" @click="goToState('numbers')">123</text>
+
+        <div class="delete-pill-sm" @click="onBtnClick('delete')">
+          <text class="delete-glyph">刪</text>
+        </div>
+      </div>
+
+      <!-- 五態模式切換選單 -->
+      <div if="{{stateMenuVisible}}" class="state-menu">
+        <text if="{{currentState==='enLetters'}}" class="menu-button menu-button-compact menu-button-active" @click="onBtnClick('toggleStateMenu')">ABC</text>
+        <text else class="menu-button menu-button-compact" @click="goToState('enLetters')">ABC</text>
+
+        <text if="{{currentState==='cnLetters'}}" class="menu-button menu-button-active" @click="onBtnClick('toggleStateMenu')">中</text>
+        <text else class="menu-button" @click="goToState('cnLetters')">中</text>
+
+        <text if="{{currentState==='symbols'}}" class="menu-button menu-button-active" @click="onBtnClick('toggleStateMenu')">符</text>
+        <text else class="menu-button" @click="goToState('symbols')">符</text>
+
+        <text if="{{currentState==='snippets'}}" class="menu-button menu-button-active" @click="onBtnClick('toggleStateMenu')">詞</text>
+        <text else class="menu-button" @click="goToState('snippets')">詞</text>
+
+        <text if="{{currentState==='numbers'}}" class="menu-button-last menu-button-compact menu-button-active" @click="onBtnClick('toggleStateMenu')">123</text>
+        <text else class="menu-button-last menu-button-compact" @click="goToState('numbers')">123</text>
+      </div>
+
+      <!-- 展開候選字覆蓋層 -->
+      <div if="{{candidateExpanded}}" class="candidate-overlay">
+        <div static class="candidate-list">
+          <list static class="candidate-list-view">
+            <list-item type="candidateRow" class="candidate-row" for="{{itemArray in resultList2}}">
+              <div class="candidate-cell" for="{{item in itemArray}}">
+                <text class="candidate-button" @click="onRsSelect(item)">{{item}}</text>
+              </div>
+            </list-item>
+          </list>
+        </div>
+        <div class="candidate-collapse" @click="onBtnClick('toggleCandidates')">
+          <text class="candidate-collapse-text">收起</text>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import vibrator from '@system.vibrator';
+import { SimpleInputMethod } from './assets/dicUtil.js';
+
+function deleteLast(value) {
+  return value ? value.substr(0, value.length - 1) : '';
+}
+
+export default {
+  props: {
+    hide: { default: true },
+    maxlength: { default: 5 },
+    vibratemode: { default: '' },
+    initialLanguage: { default: 'cn' }
+  },
+
+  data: {
+    cval: '',
+    resultList: [],
+    resultList2: [],
+    cvalList: [0, 1, 2, 3, 4],
+    currentState: 'cnLetters',
+    shiftState: 'off',
+    stateMenuVisible: false,
+    candidateExpanded: false,
+    keys: {
+      letters: [
+        ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+        ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+        ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
+      ],
+      numbers: [
+        { digits: ['1', '2', '3'], extras: ['+', '-'] },
+        { digits: ['4', '5', '6'], extras: ['*', '/'] },
+        { digits: ['7', '8', '9'], extras: ['0', '.'] }
+      ],
+      cnSymbols: [
+        ['，', '。', '？', '！', '：', '；'],
+        ['、', '“', '”', '‘', '’', '（', '）'],
+        ['《', '》', '【', '】', '…', '—', '·']
+      ],
+      enSymbols: [
+        ['(', ')', '{', '}', '[', ']', '<', '>', '!', '?', '@'],
+        ['.', ',', ':', ';', "'", '"', '`', '#', '$', '%', '\\'],
+        ['=', '/', '+', '-', '*', '_', '&', '|', '^', '~']
+      ],
+      snippets: [
+        [
+          { label: 'https://', value: 'https://', width: 96 },
+          { label: '.com', value: '.com', width: 76 },
+          { label: '.cn', value: '.cn', width: 68 },
+          { label: '.org', value: '.org', width: 76 },
+          { label: 'www.', value: 'www.', width: 80 },
+          { label: '/wiki/', value: '/wiki/', width: 82 }
+        ],
+        [
+          { label: '维基', value: 'zh.wikipedia.org', width: 90 },
+          { label: '68k新闻', value: '68k.news', width: 100 },
+          { label: 'HN', value: 'news.ycombinator.com', width: 72 },
+          { label: '小米手环', value: '小米手环9Pro', width: 108 },
+          { label: 'AstroBox', value: 'AstroBox', width: 108 }
+        ],
+        [
+          { label: 'bing', value: 'cn.bing.com', width: 84 },
+          { label: 'github', value: 'github.com', width: 94 },
+          { label: '.html', value: '.html', width: 82 },
+          { label: '/', value: '/', width: 58 },
+          { label: '?', value: '?', width: 58 },
+          { label: '=', value: '=', width: 58 }
+        ]
+      ]
+    }
+  },
+
+  onInit() {
+    this.currentState = this.initialLanguage === 'en' ? 'enLetters' : 'cnLetters';
+    this.syncCandidateSlots(this.maxlength);
+    if (typeof this.$watch === 'function') {
+      this.$watch('hide', 'watchHidePropsChange');
+      this.$watch('maxlength', 'watchMaxLengthPropsChange');
+    }
+  },
+
+  addAllTxt(text) {
+    this.$emit('complete', { content: text });
+  },
+
+  isChineseState() {
+    return this.currentState === 'cnLetters';
+  },
+
+  commitComposition() {
+    if (!this.cval) return false;
+    const text = this.resultList.length > 0 ? this.resultList[0] : this.cval;
+    this.cval = '';
+    this.clearResults();
+    this.addAllTxt(text);
+    return true;
+  },
+
+  goToState(target) {
+    const validStates = ['cnLetters', 'enLetters', 'symbols', 'snippets', 'numbers'];
+    if (validStates.indexOf(target) < 0 || target === this.currentState) {
+      this.closeOverlays();
+      return;
+    }
+    this.onVibrate();
+    if (this.isChineseState()) this.commitComposition();
+    this.currentState = target;
+    this.closeOverlays();
+  },
+
+  closeOverlays() {
+    this.stateMenuVisible = false;
+    this.candidateExpanded = false;
+  },
+
+  onRsSelect(text) {
+    this.onVibrate();
+    this.cval = '';
+    this.clearResults();
+    this.addAllTxt(text);
+  },
+
+  onBtnClick(action) {
+    this.onVibrate();
+    if (action === 'toggleStateMenu') {
+      this.stateMenuVisible = !this.stateMenuVisible;
+      this.candidateExpanded = false;
+    } else if (action === 'delete') {
+      this.stateMenuVisible = false;
+      if (this.cval.length > 0) {
+        this.cval = deleteLast(this.cval);
+        this.resetResults();
+      } else {
+        this.$emit('delete', {});
+      }
+    } else if (action === 'space') {
+      this.stateMenuVisible = false;
+      if (!(this.isChineseState() && this.commitComposition())) {
+        this.addAllTxt(' ');
+      }
+    } else if (action === 'enter') {
+      this.stateMenuVisible = false;
+      if (this.isChineseState()) this.commitComposition();
+      this.addAllTxt('\n');
+    } else if (action === 'toggleCandidates') {
+      if (this.resultList.length > 0) {
+        this.candidateExpanded = !this.candidateExpanded;
+        this.stateMenuVisible = false;
+      }
+    } else if (action === 'shift') {
+      if (this.shiftState === 'off') {
+        this.shiftState = 'once';
+      } else if (this.shiftState === 'once') {
+        this.shiftState = 'locked';
+      } else {
+        this.shiftState = 'off';
+      }
+    }
+  },
+
+  onSelect(key) {
+    this.$emit('keyDown', { content: key });
+    this.onVibrate();
+    this.stateMenuVisible = false;
+    if (this.currentState === 'cnLetters') {
+      this.cval += key.toLowerCase();
+      this.resetResults();
+    } else if (this.currentState === 'enLetters') {
+      this.addAllTxt(this.shiftState === 'off' ? key.toLowerCase() : key.toUpperCase());
+      if (this.shiftState === 'once') this.shiftState = 'off';
+    } else {
+      this.addAllTxt(key);
+    }
+  },
+
+  pushCval() {
+    if (!this.cval) return;
+    this.onVibrate();
+    const value = this.cval;
+    this.cval = '';
+    this.clearResults();
+    this.addAllTxt(value);
+  },
+
+  clearResults() {
+    this.resultList = [];
+    this.resultList2 = [];
+    this.candidateExpanded = false;
+  },
+
+  resetResults() {
+    if (!this.cval || !this.isChineseState()) {
+      this.clearResults();
+      return;
+    }
+    const result = SimpleInputMethod.getHanzi(this.cval);
+    this.resultList = Array.isArray(result) && result[0] ? result[0] : [];
+    this.setResultListAll();
+  },
+
+  setResultListAll() {
+    const size = parseInt(this.maxlength) || 5;
+    const groups = [];
+    let group = [];
+    for (let i = 0; i < this.resultList.length; i++) {
+      group.push(this.resultList[i]);
+      if (group.length === size) {
+        groups.push(group);
+        group = [];
+      }
+    }
+    if (group.length > 0) groups.push(group);
+    this.resultList2 = groups;
+  },
+
+  syncCandidateSlots(length) {
+    const slots = [];
+    const size = parseInt(length) || 5;
+    for (let i = 0; i < size; i++) slots.push(i);
+    this.cvalList = slots;
+  },
+
+  watchHidePropsChange(value) {
+    this.$emit('visibilityChange', { visible: !value });
+  },
+
+  watchMaxLengthPropsChange(value) {
+    this.syncCandidateSlots(value);
+    this.setResultListAll();
+  },
+
+  onVibrate() {
+    if (this.vibratemode) vibrator.vibrate({ mode: this.vibratemode });
+  }
+};
+</script>
+
+<style>
+@import "./InputMethod.css";
+</style>

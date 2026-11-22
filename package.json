@@ -1,0 +1,18 @@
+{
+  "name": "band-browser",
+  "version": "1.0.0",
+  "author": "O-O1112",
+  "private": true,
+  "description": "Geek minimal web reader browser for Xiaomi Smart Band 9 Pro (336x480) via AstroBox WASM WASI HTTP plugin.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build:rpk": "node scripts/build-rpk.cjs --mode release",
+    "build:abp": "powershell -ExecutionPolicy Bypass -File astrobox-plugin/build.ps1",
+    "test": "node --test tests/*.test.mjs",
+    "test:rust": "cargo test --manifest-path astrobox-plugin/Cargo.toml",
+    "verify:emu": "node scripts/verify-emulator.cjs",
+    "render:store": "node scripts/render-store-assets.cjs"
+  }
+}

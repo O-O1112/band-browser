@@ -1,0 +1,585 @@
+<template>
+  <stack class="root">
+    <div class="reader-layout">
+      <!-- 无源流沙标准 324px 阅读滚动区 -->
+      <scroll class="reader-scroll" scroll-y="true" bounces="true">
+        <div class="inner-col">
+          <!-- 网址输入胶囊卡片 -->
+          <div class="url-card" @click="editUrl">
+            <text class="url-txt">{{currentUrl}}</text>
+            <div class="url-edit-chip">
+              <text class="url-edit-txt">输入</text>
+            </div>
+          </div>
+
+          <!-- 网页标题主卡片（仿 SimpleRSS detail.ux 28px/32px 深灰无框圆角卡） -->
+          <div class="hero-card">
+            <div class="meta-row">
+              <div if="{{badgeLabel}}" class="mode-pill {{isLivePage ? 'mode-pill-live' : ''}}">
+                <text class="mode-tag {{isLivePage ? 'mode-live' : ''}}">{{badgeLabel}}</text>
+              </div>
+              <text class="doc-host">{{displayHost}}</text>
+            </div>
+            <text class="doc-title">{{pageTitle}}</text>
+          </div>
+
+          <!-- 实时抓取失败提示卡：点击立即重试 -->
+          <div if="{{!loading && noticeText}}" class="notice-card" @click="reloadFromMenu">
+            <text class="notice-txt">{{noticeText}} · 点此重试 ›</text>
+          </div>
+
+          <div if="{{loading}}" class="loading-card">
+            <text class="loading-txt">正在通过 AstroBox 抓取网页...</text>
+          </div>
+
+          <!-- 正文深灰阅读卡片容器 -->
+          <div if="{{!loading && blocks.length > 0}}" class="article-card">
+            <div
+              for="{{blk in blocks}}"
+              tid="idx"
+              class="blk"
+            >
+              <div if="{{blk.kind === 'h'}}" class="blk-h-row">
+                <div class="blk-h-bar"></div>
+                <text class="blk-h" style="{{ { fontSize: (fontSizePx + 2) + 'px' } }}">{{blk.text}}</text>
+              </div>
+              <text if="{{blk.kind !== 'h'}}" class="blk-p" style="{{ { fontSize: fontSizePx + 'px', lineHeight: (fontSizePx + 10) + 'px' } }}">{{blk.text}}</text>
+            </div>
+          </div>
+
+          <div if="{{!loading && hasMore}}" class="load-more-card" @click="loadMoreSection">
+            <text class="load-more-txt">加载下一段正文</text>
+          </div>
+
+          <div if="{{!loading && links.length > 0}}" class="links-sec">
+            <text class="ls-sec-label">页面超链接（点击直达）</text>
+            <div
+              for="{{lk in links}}"
+              tid="url"
+              class="link-card"
+              @click="followLink(lk.url)"
+            >
+              <div class="link-badge">
+                <text class="link-badge-txt">#</text>
+              </div>
+              <text class="link-label">{{lk.label}}</text>
+              <text class="link-go">›</text>
+            </div>
+          </div>
+
+          <div class="reader-spacer-bottom"></div>
+        </div>
+      </scroll>
+
+      <!-- 无源流沙纯黑底部胶囊导航栏 -->
+      <div class="bottom-nav">
+        <div class="{{canBack ? 'pag-btn' : 'pag-btn pag-disabled'}}" @click="goBack">
+          <text class="{{canBack ? 'pag-txt' : 'pag-txt-disabled'}}">‹ 后退</text>
+        </div>
+        <div class="pag-btn pag-star" @click="saveBookmarkAndOffline">
+          <text class="pag-star-txt">收藏</text>
+        </div>
+        <div class="{{canForward ? 'pag-btn' : 'pag-btn pag-disabled'}}" @click="goForward">
+          <text class="{{canForward ? 'pag-txt' : 'pag-txt-disabled'}}">前进 ›</text>
+        </div>
+      </div>
+    </div>
+
+    <!-- 顶部无源流沙标准 72x72 圆形操作键 + 时钟/标题 -->
+    <text class="time">{{nowTime}}</text>
+    <text class="title">{{displayHost}}</text>
+    <image class="top-btn-left" src="/common/images/back_rect.png" @click="goBackOrHome"></image>
+    <image class="top-btn-right" src="/common/images/more_rect.png" @click="openMenu"></image>
+
+    <!-- 更多操作弹层 -->
+    <div if="{{menuOpen}}" class="menu-mask" @click="closeMenu">
+      <div class="menu-sheet">
+        <text class="menu-title">网页工具</text>
+        <div class="menu-item menu-primary" @click="editUrl">
+          <text class="menu-item-txt">输入网址 / 搜索</text>
+        </div>
+        <div class="menu-item" @click="cycleFont">
+          <text class="menu-item-txt">切换字号 (当前 A{{fontSizePx}})</text>
+        </div>
+        <div class="menu-item" @click="reloadFromMenu">
+          <text class="menu-item-txt">刷新当前网页</text>
+        </div>
+        <div class="menu-item" @click="goHome">
+          <text class="menu-item-txt">返回浏览器首页</text>
+        </div>
+        <div class="menu-close" @click="closeMenu">
+          <text class="menu-close-txt">取消</text>
+        </div>
+      </div>
+    </div>
+  </stack>
+</template>
+
+<script>
+import router from '@system.router';
+import prompt from '@system.prompt';
+import { createHistoryTracker, extractHost } from '../../common/browserUtils.js';
+
+function formatNow() {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+export default {
+  protected: {
+    url: 'https://zh.wikipedia.org/wiki/Xiaomi',
+  },
+  private: {
+    nowTime: formatNow(),
+    currentUrl: '',
+    displayHost: '...',
+    pageTitle: '加载中...',
+    badgeLabel: '',
+    isLivePage: false,
+    noticeText: '',
+    loading: true,
+    blocks: [],
+    links: [],
+    hasMore: false,
+    nextOffset: 0,
+    canBack: false,
+    canForward: false,
+    fontSizePx: 20,
+    menuOpen: false,
+    history: null,
+  },
+  onInit() {
+    this.history = createHistoryTracker();
+    this.navigateTo(this.url || 'https://zh.wikipedia.org/wiki/Xiaomi', true);
+  },
+  onShow() {
+    this.nowTime = formatNow();
+  },
+  onBackPress() {
+    if (this.menuOpen) {
+      this.menuOpen = false;
+      return true;
+    }
+    if (this.history && this.history.canBack()) {
+      this.goBack();
+      return true;
+    }
+    return false;
+  },
+  syncHistoryFlags() {
+    if (!this.history) return;
+    this.canBack = this.history.canBack();
+    this.canForward = this.history.canForward();
+  },
+  async navigateTo(targetUrl, pushHistory = true) {
+    if (!targetUrl) return;
+    if (pushHistory && this.history) {
+      this.history.visit(targetUrl);
+    }
+    this.syncHistoryFlags();
+    this.currentUrl = targetUrl;
+    this.displayHost = extractHost(targetUrl);
+    this.loading = true;
+    this.hasMore = false;
+    this.nextOffset = 0;
+
+    const client = this.$app.$def.getBrowserClient();
+    const res = await client.fetchWebPage(targetUrl, 0, 1600);
+    this.applyPageResult(res, false);
+  },
+  async loadMoreSection() {
+    if (this.loading || !this.hasMore) return;
+    const client = this.$app.$def.getBrowserClient();
+    const res = await client.fetchWebPage(this.currentUrl, this.nextOffset, 1600);
+    this.applyPageResult(res, true);
+  },
+  applyPageResult(res, append) {
+    this.loading = false;
+    this.pageTitle = res.title || this.displayHost;
+    this.isLivePage = !res.demo && !res.offlineSaved;
+    this.noticeText = res.notice || '';
+    this.badgeLabel = res.offlineSaved
+      ? '离线缓存'
+      : res.demo
+        ? '演示快照'
+        : '实时阅读';
+
+    const newBlocks = (res.blocks || []).map((b, i) => ({
+      idx: (append ? this.blocks.length : 0) + i,
+      kind: b.kind || 'p',
+      text: b.text || '',
+    }));
+    this.blocks = append ? this.blocks.concat(newBlocks) : newBlocks;
+    if (!append) {
+      this.links = res.links || [];
+    }
+    this.hasMore = Boolean(res.has_more);
+    this.nextOffset = Number(res.next_offset) || 0;
+  },
+  followLink(targetUrl) {
+    this.navigateTo(targetUrl, true);
+  },
+  openMenu() {
+    this.menuOpen = true;
+  },
+  closeMenu() {
+    this.menuOpen = false;
+  },
+  reloadFromMenu() {
+    this.menuOpen = false;
+    this.navigateTo(this.currentUrl, false);
+  },
+  goBackOrHome() {
+    if (this.history && this.history.canBack()) {
+      this.goBack();
+    } else {
+      router.back();
+    }
+  },
+  goHome() {
+    this.menuOpen = false;
+    router.back();
+  },
+  goBack() {
+    if (!this.history || !this.history.canBack()) return;
+    const prev = this.history.back();
+    if (prev) this.navigateTo(prev, false);
+  },
+  goForward() {
+    if (!this.history || !this.history.canForward()) return;
+    const next = this.history.forward();
+    if (next) this.navigateTo(next, false);
+  },
+  editUrl() {
+    this.menuOpen = false;
+    this.$app.$def.setPendingInput(this.currentUrl);
+    router.replace({ uri: 'pages/address' });
+  },
+  cycleFont() {
+    const sizes = [18, 20, 22, 24];
+    const idx = sizes.indexOf(this.fontSizePx);
+    this.fontSizePx = sizes[(idx + 1) % sizes.length];
+    this.menuOpen = false;
+  },
+  async saveBookmarkAndOffline() {
+    const client = this.$app.$def.getBrowserClient();
+    const added = await client.toggleBookmark(this.pageTitle, this.currentUrl);
+    if (added) {
+      await client.saveOfflinePage({
+        url: this.currentUrl,
+        title: this.pageTitle,
+        host: this.displayHost,
+        blocks: this.blocks,
+        links: this.links,
+      });
+    }
+    prompt.showToast({ message: added ? '已收藏并离线保存网页' : '已取消收藏' });
+  },
+};
+</script>
+
+<style>
+@import "../../common/app.css";
+
+.reader-layout {
+  width: 336px;
+  height: 480px;
+  flex-direction: column;
+  background-color: #000000;
+}
+.reader-scroll {
+  width: 336px;
+  margin-top: 86px;
+  flex: 1;
+  flex-direction: column;
+}
+.inner-col {
+  width: 336px;
+  flex-direction: column;
+  align-items: center;
+}
+.url-card {
+  width: 324px;
+  height: 54px;
+  padding: 0 10px 0 18px;
+  border-radius: 27px;
+  background-color: #262626;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.url-txt {
+  flex: 1;
+  font-size: 16px;
+  font-weight: bold;
+  color: #64b5f6;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.url-edit-chip {
+  padding: 6px 14px;
+  border-radius: 18px;
+  background-color: #363636;
+  margin-left: 8px;
+}
+.url-edit-txt {
+  font-size: 15px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.hero-card {
+  width: 324px;
+  padding: 16px 18px;
+  border-radius: 28px;
+  background-color: #262626;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+.meta-row {
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.mode-pill {
+  padding: 3px 10px;
+  border-radius: 10px;
+  background-color: #1b365d;
+}
+.mode-pill-live {
+  background-color: #163d34;
+}
+.mode-tag {
+  font-size: 14px;
+  font-weight: bold;
+  color: #64b5f6;
+}
+.mode-live {
+  color: #4ade80;
+}
+.notice-card {
+  width: 324px;
+  padding: 12px 18px;
+  border-radius: 24px;
+  background-color: #2f1d22;
+  margin-bottom: 8px;
+}
+.notice-txt {
+  font-size: 16px;
+  font-weight: bold;
+  color: #fca5a5;
+  lines: 2;
+  text-overflow: ellipsis;
+}
+.doc-host {
+  font-size: 15px;
+  color: #9a9a9a;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.doc-title {
+  font-size: 24px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.loading-card {
+  width: 324px;
+  padding: 24px 18px;
+  border-radius: 28px;
+  background-color: #262626;
+  align-items: center;
+}
+.loading-txt {
+  font-size: 18px;
+  font-weight: bold;
+  color: #64b5f6;
+}
+.article-card {
+  width: 324px;
+  padding: 16px 18px;
+  border-radius: 28px;
+  background-color: #191919;
+  flex-direction: column;
+  margin-bottom: 10px;
+}
+.blk {
+  width: 100%;
+  margin-bottom: 10px;
+  flex-direction: column;
+}
+.blk-h-row {
+  flex-direction: row;
+  align-items: center;
+}
+.blk-h-bar {
+  width: 4px;
+  height: 22px;
+  border-radius: 2px;
+  background-color: #0d84ff;
+  margin-right: 10px;
+}
+.blk-h {
+  flex: 1;
+  font-weight: bold;
+  color: #ffffff;
+}
+.blk-p {
+  color: #d4d4d8;
+}
+.load-more-card {
+  width: 324px;
+  height: 54px;
+  border-radius: 27px;
+  background-color: #262626;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.load-more-txt {
+  font-size: 18px;
+  font-weight: bold;
+  color: #64b5f6;
+}
+.links-sec {
+  width: 324px;
+  margin-top: 2px;
+  flex-direction: column;
+}
+.link-card {
+  width: 324px;
+  padding: 14px 16px;
+  border-radius: 28px;
+  background-color: #262626;
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.link-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  background-color: #1b365d;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+.link-badge-txt {
+  font-size: 16px;
+  font-weight: bold;
+  color: #64b5f6;
+}
+.link-label {
+  flex: 1;
+  font-size: 19px;
+  font-weight: bold;
+  color: #ffffff;
+  lines: 2;
+  text-overflow: ellipsis;
+}
+.link-go {
+  font-size: 24px;
+  font-weight: bold;
+  color: #9a9a9a;
+  margin-left: 8px;
+}
+.reader-spacer-bottom {
+  width: 1px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.bottom-nav {
+  width: 336px;
+  height: 62px;
+  padding: 6px 10px 8px 10px;
+  background-color: #000000;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.pag-btn {
+  height: 48px;
+  width: 98px;
+  border-radius: 24px;
+  background-color: #262626;
+  justify-content: center;
+  align-items: center;
+}
+.pag-disabled {
+  background-color: #161616;
+}
+.pag-txt {
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.pag-txt-disabled {
+  font-size: 18px;
+  font-weight: bold;
+  color: #555555;
+}
+.pag-star {
+  width: 106px;
+  background-color: #1b365d;
+}
+.pag-star-txt {
+  font-size: 18px;
+  font-weight: bold;
+  color: #64b5f6;
+}
+.menu-mask {
+  width: 336px;
+  height: 480px;
+  background-color: rgba(0, 0, 0, 0.85);
+  align-items: center;
+  justify-content: center;
+}
+.menu-sheet {
+  width: 300px;
+  padding: 18px;
+  border-radius: 32px;
+  background-color: #262626;
+  flex-direction: column;
+}
+.menu-title {
+  font-size: 22px;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+  margin-bottom: 12px;
+}
+.menu-item {
+  width: 100%;
+  height: 52px;
+  border-radius: 26px;
+  background-color: #363636;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.menu-primary {
+  background-color: #0d84ff;
+}
+.menu-item-txt {
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.menu-close {
+  width: 100%;
+  height: 48px;
+  border-radius: 24px;
+  background-color: #161616;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+.menu-close-txt {
+  font-size: 18px;
+  font-weight: bold;
+  color: #9a9a9a;
+}
+</style>

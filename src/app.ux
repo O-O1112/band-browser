@@ -1,0 +1,23 @@
+<script>
+import { createBrowserClient } from './common/browserClient.js';
+
+export default {
+  browserClient: null,
+  pendingUrl: '',
+  onCreate() {
+    this.browserClient = createBrowserClient();
+  },
+  getBrowserClient() {
+    if (!this.browserClient) {
+      this.browserClient = createBrowserClient();
+    }
+    return this.browserClient;
+  },
+  setPendingInput(val) {
+    this.pendingUrl = val || '';
+  },
+  getPendingInput() {
+    return this.pendingUrl || '';
+  },
+};
+</script>

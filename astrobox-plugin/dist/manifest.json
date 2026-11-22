@@ -1,0 +1,19 @@
+{
+  "name": "流沙浏览器同步插件",
+  "icon": "icon.png",
+  "version": "1.0.0",
+  "description": "流沙浏览器配套网络代理模块：通过 WASI HTTP 直接抓取网页并抽取正文与超链接传送至小米手环 9 Pro",
+  "author": "O-O1112",
+  "website": "https://github.com/O-O1112/band-browser",
+  "entry": "band_browser_sync.wasm",
+  "wasi_version": 2,
+  "api_level": 3,
+  "permissions": [
+    "device",
+    "interconnect",
+    "network",
+    "thirdpartyapp",
+    "register_interconnect_recv"
+  ],
+  "additional_files": []
+}

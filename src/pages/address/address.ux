@@ -1,0 +1,197 @@
+<import name="input-method" src="../../components/InputMethod/InputMethod.ux"></import>
+<template>
+  <stack class="root">
+    <div class="addr-page">
+      <div class="top-spacer"></div>
+
+      <!-- 无源流沙标准 324px 大圆角输入卡（无杂色边框） -->
+      <div class="input-card">
+        <div class="input-line-box">
+          <text class="input-val {{textVal ? '' : 'input-hint'}}">{{textVal ? displayValue : '| 输入网址或搜索词...'}}</text>
+        </div>
+        <div class="edit-bar">
+          <div class="mini-btn" @click="moveCursor(-1)">
+            <text class="mini-txt">‹ 左</text>
+          </div>
+          <div class="mini-btn" @click="moveCursor(1)">
+            <text class="mini-txt">右 ›</text>
+          </div>
+          <div class="mini-btn eng-btn" @click="toggleEngine">
+            <text class="eng-txt">{{engineLabel}}</text>
+          </div>
+          <div class="mini-btn clear-btn" @click="clearAll">
+            <text class="clear-txt">清空</text>
+          </div>
+        </div>
+      </div>
+
+      <input-method
+        hide="{{false}}"
+        initial-language="en"
+        maxlength="5"
+        vibratemode=""
+        @delete="onDelete"
+        @complete="onComplete"
+      ></input-method>
+    </div>
+
+    <!-- 顶部无源流沙标准 72x72 圆形返回 / 蓝色确认键 -->
+    <text class="time">{{nowTime}}</text>
+    <text class="title">输入网址</text>
+    <image class="top-btn-left" src="/common/images/back_rect.png" @click="onCancel"></image>
+    <image class="top-btn-right" src="/common/images/check_rect.png" @click="onGo"></image>
+  </stack>
+</template>
+
+<script>
+import router from '@system.router';
+import { normalizeUrlOrSearch } from '../../common/browserUtils.js';
+
+function formatNow() {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+export default {
+  private: {
+    nowTime: formatNow(),
+    textVal: '',
+    cursor: 0,
+    displayValue: '|',
+    engine: 'bing',
+    engineLabel: 'Bing',
+  },
+  onInit() {
+    const initial = this.$app.$def.getPendingInput();
+    this.textVal = initial || '';
+    this.cursor = this.textVal.length;
+    this.syncPreview();
+  },
+  onShow() {
+    this.nowTime = formatNow();
+  },
+  syncPreview() {
+    const left = this.textVal.slice(0, this.cursor);
+    const right = this.textVal.slice(this.cursor);
+    const full = `${left}|${right}`;
+    this.displayValue = full.length > 26 ? `...${full.slice(-24)}` : full;
+  },
+  moveCursor(delta) {
+    this.cursor = Math.max(0, Math.min(this.textVal.length, this.cursor + delta));
+    this.syncPreview();
+  },
+  clearAll() {
+    this.textVal = '';
+    this.cursor = 0;
+    this.syncPreview();
+  },
+  toggleEngine() {
+    this.engine = this.engine === 'bing' ? 'ddg' : 'bing';
+    this.engineLabel = this.engine === 'bing' ? 'Bing' : 'DDG';
+  },
+  onDelete() {
+    if (this.cursor <= 0) return;
+    this.textVal = this.textVal.slice(0, this.cursor - 1) + this.textVal.slice(this.cursor);
+    this.cursor -= 1;
+    this.syncPreview();
+  },
+  onComplete(evt) {
+    const chunk = (evt && evt.detail && evt.detail.content) || '';
+    if (!chunk) return;
+    if (this.textVal.length + chunk.length > 180) return;
+    this.textVal = this.textVal.slice(0, this.cursor) + chunk + this.textVal.slice(this.cursor);
+    this.cursor += chunk.length;
+    this.syncPreview();
+  },
+  onCancel() {
+    router.back();
+  },
+  onGo() {
+    const url = normalizeUrlOrSearch(this.textVal, this.engine);
+    router.replace({
+      uri: 'pages/reader',
+      params: { url },
+    });
+  },
+};
+</script>
+
+<style>
+@import "../../common/app.css";
+
+.addr-page {
+  width: 336px;
+  height: 480px;
+  flex-direction: column;
+  align-items: center;
+  background-color: #000000;
+}
+.top-spacer {
+  width: 1px;
+  height: 82px;
+  flex-shrink: 0;
+}
+.input-card {
+  width: 324px;
+  padding: 10px 12px;
+  border-radius: 26px;
+  background-color: #262626;
+  flex-direction: column;
+  margin-bottom: 4px;
+}
+.input-line-box {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 18px;
+  background-color: #161616;
+  justify-content: center;
+  align-items: flex-start;
+}
+.input-val {
+  width: 100%;
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffffff;
+  lines: 1;
+  text-align: left;
+}
+.input-hint {
+  color: #7a7a80;
+}
+.edit-bar {
+  margin-top: 8px;
+  flex-direction: row;
+  justify-content: space-between;
+}
+.mini-btn {
+  width: 72px;
+  height: 32px;
+  border-radius: 16px;
+  background-color: #363636;
+  align-items: center;
+  justify-content: center;
+}
+.mini-txt {
+  font-size: 15px;
+  font-weight: bold;
+  color: #ffffff;
+}
+.eng-btn {
+  background-color: #1b365d;
+}
+.eng-txt {
+  font-size: 15px;
+  font-weight: bold;
+  color: #64b5f6;
+}
+.clear-btn {
+  background-color: #3f2226;
+}
+.clear-txt {
+  font-size: 15px;
+  font-weight: bold;
+  color: #ff6b6b;
+}
+</style>

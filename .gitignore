@@ -1,0 +1,7 @@
+node_modules/
+build/
+.temp_*
+astrobox-plugin/target/
+sign/
+*.log
+
